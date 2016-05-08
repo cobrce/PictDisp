@@ -65,8 +65,7 @@ namespace PictDisp
         {
             try
             {
-                savedata = ReadSaves();
-                if (savedata != null)
+                if (ReadSaves())
                 {
                     checkBox1.Checked = savedata.Dark;
                     if (savedata.Entries != null)
@@ -86,21 +85,23 @@ namespace PictDisp
             return false;
         }
 
-        private SaveData ReadSaves()
+        private bool ReadSaves()
         {
             try
             {
-                if (!File.Exists(SavePath)) return null;
+                if (!File.Exists(SavePath)) return false;
                 using (FileStream file = File.OpenRead(SavePath))
                 {
                     XmlSerializer serializer = new XmlSerializer(typeof(SaveData));
                     SaveData localdata = (SaveData)serializer.Deserialize(file);
                     if (localdata.Entries != null)
                         localdata.ReadEntries();
-                    return localdata;
+                    savedata = localdata;
+                    return (savedata.Entries.Count > 0);
+                    //return true;
                 }
             }
-            catch { return null; }
+            catch { return false; }
         }
 
         enum Direction
@@ -226,17 +227,18 @@ namespace PictDisp
             {
                 savedata.EntriesDict[folder] = files[current]; // save current file
 
-                SaveData FinalSaveData = ReadSaves(); // read actual saves (we need only entries)
-                if (FinalSaveData != null)
-                {
-                    foreach (var pair in savedata.EntriesDict) // merge actual and new EntryDict (add/replace)
-                        FinalSaveData.EntriesDict[pair.Key] = pair.Value;
-                    FinalSaveData.Dark = savedata.Dark; // copy actual nightmode setting
-                }
-                else
-                {
-                    FinalSaveData = savedata;
-                }
+                //SaveData FinalSaveData = ReadSaves(); // read actual saves (we need only entries)
+                //if (FinalSaveData != null)
+                //{
+                //    foreach (var pair in savedata.EntriesDict) // merge actual and new EntryDict (add/replace)
+                //        FinalSaveData.EntriesDict[pair.Key] = pair.Value;
+                //    FinalSaveData.Dark = savedata.Dark; // copy actual nightmode setting
+                //}
+                //else
+                //{
+                //    FinalSaveData = savedata;
+                //}
+                SaveData FinalSaveData = savedata;
                 FinalSaveData.SetEntries(); // convert dictionarry to list of entries
 
                 using (MemoryStream ms = new MemoryStream())
