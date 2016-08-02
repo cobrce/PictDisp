@@ -14,6 +14,12 @@ using System.Threading.Tasks;
 using System.Windows.Forms;
 using System.Xml.Serialization;
 
+/*
+    version 0.2 update:
+    - picturebox is drawn manually
+    - when the form is deactivated, the first click only activate it
+
+*/
 namespace PictDisp
 {
     public partial class MainForm : Form
@@ -21,15 +27,20 @@ namespace PictDisp
         private string folder;
         private string[] files;
         private int current = 0;
-        string VersionTitle = "PictDisp 0.1 by COB";
+        string VersionTitle = "PictDisp 0.2 by COB";
         private SaveData savedata = new SaveData();
         private Brush DarkBrush = new SolidBrush(Color.FromArgb(22, 22, 22));
-        private double Ratio; // ratio between pictureBox1.Width and img.Width (put in global for futur use)
+        //private double Ratio; // ratio between pictureBox1.Width and img.Width (put in global for futur use)
         private string Lastfile;
+        private int Y = 0;
+        private double ActualProgress;
 
         public MainForm()
         {
             InitializeComponent();
+
+            pictureBox1.Location = new Point(0, 5);
+            
             this.Text = VersionTitle;
             pictureBox1.MouseWheel += new MouseEventHandler((o, e) =>
             {
@@ -41,7 +52,17 @@ namespace PictDisp
             });
             //panel1.MouseEnter += new EventHandler((o, e) => { panel1.Focus(); });
         }
-
+        
+        // get both the form and all of its controls double-buffered
+        protected override CreateParams CreateParams
+        {
+            get
+            {
+                var cp = base.CreateParams;
+                cp.ExStyle |= 0x02000000;    // Turn on WS_EX_COMPOSITED
+                return cp;
+            }
+        }
         private void Form1_Load(object sender, EventArgs e)
         {
             if (!RecentFiles())
@@ -113,7 +134,6 @@ namespace PictDisp
         private void ChangePicture(Direction direction)
         {
             //panel1.ScrollControlIntoView(pictureBox1);
-            pictureBox1.Location = new Point(0, 5);
 
             current += (int)direction;
             if (current < 0) current = 0;
@@ -125,11 +145,15 @@ namespace PictDisp
             Bitmap bmp = (Bitmap)Bitmap.FromFile(currentfile);
             if (savedata.Dark) bmp = InvertColor(bmp);
 
-            pictureBox1.Image = bmp;
-            UpdatePictureBoxSize();
+            pictureBox1.Tag = bmp;
+            //UpdatePictureBoxSize(false);
 
             comboBox1.SelectedIndex = current;
             textBox1.Text = (current + 1).ToString();
+
+            Y = 0;
+            pictureBox1.Invalidate();
+            panel2.Refresh();
         }
 
        
@@ -157,22 +181,22 @@ namespace PictDisp
             return inverted;
         }
 
-        private void UpdatePictureBoxSize()
-        {
+        //private void UpdatePictureBoxSize(bool changelocation = true)
+        //{
 
-            Image img = pictureBox1.Image;
-            if (img == null) return;
-            pictureBox1.Width = ClientSize.Width;// panel1.Width - 22;
+        //    Image img = pictureBox1.Image;
+        //    if (img == null) return;
+        //    pictureBox1.Width = ClientSize.Width;// panel1.Width - 22;
 
-            Ratio = (double)pictureBox1.Width / (double)img.Width;
-            pictureBox1.Height = (int)(Ratio * (double)img.Height);
+        //    Ratio = (double)pictureBox1.Width / (double)img.Width;
+        //    pictureBox1.Height = (int)(Ratio * (double)img.Height);
 
-            int maxY = ClientSize.Height - pictureBox1.Height;
-            if (ClientSize.Height > pictureBox1.Height) maxY = -maxY;
+        //    int maxY = ClientSize.Height - pictureBox1.Height;
+        //    if (ClientSize.Height > pictureBox1.Height) maxY = -maxY;
 
-            if (pictureBox1.Location.Y < maxY)
-                pictureBox1.Location = new Point(0, maxY);
-        }
+        //    if (changelocation && pictureBox1.Location.Y < maxY)
+        //        pictureBox1.Location = new Point(0, maxY);
+        //}
 
         private bool ListPictures()
         {
@@ -196,7 +220,9 @@ namespace PictDisp
         {
             button6.Left = ClientSize.Width - button6.Width;
             button6.Top = 5;
-            UpdatePictureBoxSize();
+            pictureBox1.Width = ClientSize.Width;
+            pictureBox1.Height = ClientSize.Height - 5;
+            //UpdatePictureBoxSize();
         }
 
         private void pictureBox1_MouseEnter(object sender, EventArgs e)
@@ -352,17 +378,21 @@ namespace PictDisp
             //{
             //    p.ScrollControlIntoView(c);
             //}
-            if (ClientSize.Height > pictureBox1.Height) return;
+            //if (ClientSize.Height > pictureBox1.Height) return;
 
-            int newY = pictureBox1.Location.Y - step;
-            newY = Math.Max(newY, ClientSize.Height - pictureBox1.Height);
-            pictureBox1.Location = new Point(pictureBox1.Location.X, newY);
+            Y += step;
+            //Y = Math.Max(Y, ClientSize.Height - pictureBox1.Height);
+            pictureBox1.Invalidate();
+            panel2.Refresh();
+            //pictureBox1.Location = new Point(pictureBox1.Location.X, Y);
         }
         public void ScrollUp(/*Panel p,*/ int step)
         {
-            int newY = pictureBox1.Location.Y + step;
-            if (newY > 5) newY = 5;
-            pictureBox1.Location = new Point(0, newY);
+            Y -= step;
+            if (Y < 0) Y = 0;
+            pictureBox1.Invalidate();
+            panel2.Refresh();
+            //pictureBox1.Location = new Point(0, newY);
             //using (Control c = new Control() { Parent = p, Height = 1, Top = -p.ClientSize.Height * step / 100 })
             //{
             //    p.ScrollControlIntoView(c);
@@ -377,21 +407,18 @@ namespace PictDisp
         private void MainForm_Resize(object sender, EventArgs e)
         {
             //panel1.Size = ClientSize;
+            pictureBox1.Width = ClientSize.Width;
+            pictureBox1.Height = ClientSize.Height - 5;
         }
 
         private void panel2_Paint(object sender, PaintEventArgs e)
         {
             e.Graphics.FillRectangle(DarkBrush, panel2.ClientRectangle);
-            double ActualProgress = -(double)(pictureBox1.Location.Y-5) / (double)(pictureBox1.Height - ClientSize.Height+5);// panel1.ClientSize.Height);
+            /*ActualProgress =-(double)Y(pictureBox1.Location.Y-5) / (double)(pictureBox1.Height - ClientSize.Height+5);*/// panel1.ClientSize.Height);
             int ProgressBarWidth = (int)(ActualProgress * panel2.Width);
             e.Graphics.FillRectangle(Brushes.DodgerBlue, new Rectangle(0, 0, ProgressBarWidth, 5));
         }
-
-        private void pictureBox1_LocationChanged(object sender, EventArgs e)
-        {
-            panel2.Invalidate();
-        }
-
+        
         private void checkBox2_CheckedChanged(object sender, EventArgs e)
         {
             ToggleFullScreen();
@@ -450,5 +477,36 @@ namespace PictDisp
             this.Close();
         }
 
+        private void MainForm_Activated(object sender, EventArgs e)
+        {
+            pictureBox1.Enabled = true;
+        }
+
+        private void MainForm_Deactivate(object sender, EventArgs e)
+        {
+            pictureBox1.Enabled = false;
+        }
+
+        private void pictureBox1_Paint(object sender, PaintEventArgs e)
+        {
+            if (pictureBox1.Tag == null || !(pictureBox1.Tag is Image)) return;
+
+            Image img = (Image)pictureBox1.Tag;
+
+
+            int width = img.Width;
+            int height = (int)((double)pictureBox1.Height * ((double)img.Width / (double)pictureBox1.Width));
+
+            int maxY = img.Height - height;
+            if (maxY < 0) maxY = 0;
+
+            if (Y > maxY) Y = maxY;
+
+            ActualProgress =  (double)Y / (double)maxY;
+
+            Rectangle rect = new Rectangle(0, Y, width, height);
+            e.Graphics.DrawImage(img, new Rectangle(0, 0, pictureBox1.Width, pictureBox1.Height), rect, GraphicsUnit.Pixel);
+            
+        }
     }
 }
