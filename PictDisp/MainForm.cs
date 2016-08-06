@@ -10,6 +10,7 @@ using System.Linq;
 using System.Reflection;
 using System.Runtime.InteropServices;
 using System.Text;
+using System.Threading;
 using System.Threading.Tasks;
 using System.Windows.Forms;
 using System.Xml.Serialization;
@@ -17,8 +18,12 @@ using System.Xml.Serialization;
 /*
     version 0.2 update:
     - picturebox is drawn manually
-    - when the form is deactivated, the first click only activate it
-
+    - when the form is deactivated, the first click only activates it
+    - smooth scroll down/up
+    - home/end for beginig/end of the picture
+    - "last picture" message is shown when no more file
+    - press controlkey to switch on/off magnifier
+    - added "reload" button (show recent and openfolder form)
 */
 namespace PictDisp
 {
@@ -34,25 +39,34 @@ namespace PictDisp
         private string Lastfile;
         private int Y = 0;
         private double ActualProgress;
+        private Thread ScrollThread;
+        private int currentY;
+        private int step;
+
+        string message = "Last picture";
+        Font font = new Font("Comic Sans MS", 20);
+        private Brush brush = new SolidBrush(Color.FromArgb(220, Color.Black));
+        private bool isFullScreen;
+        private int maxY;
+        private float Gain = 1.5f;
+        private bool showMagnifier;
+        private Point MouseLocation;
+
 
         public MainForm()
         {
             InitializeComponent();
 
             pictureBox1.Location = new Point(0, 5);
-            
+
             this.Text = VersionTitle;
             pictureBox1.MouseWheel += new MouseEventHandler((o, e) =>
             {
-                if (e.Delta > 0)
-                    ScrollUp(e.Delta);
-                else
-                    ScrollDown(-e.Delta);
-
+                ScrollPicture(-e.Delta);
             });
             //panel1.MouseEnter += new EventHandler((o, e) => { panel1.Focus(); });
         }
-        
+
         // get both the form and all of its controls double-buffered
         protected override CreateParams CreateParams
         {
@@ -65,6 +79,21 @@ namespace PictDisp
         }
         private void Form1_Load(object sender, EventArgs e)
         {
+            if (!LoadPictures())
+            {
+                MessageBox.Show(this, "Closing, no picture found", VersionTitle);
+                Environment.Exit(0);
+            }
+            else
+            {
+                ScrollThread = new Thread(new ThreadStart(SmoothScroll));
+                ScrollThread.Start();
+            }
+        }
+        private bool LoadPictures()
+        {
+            checkBox1.CheckedChanged -= new EventHandler(this.checkBox1_CheckedChanged);
+
             if (!RecentFiles())
                 if (folderBrowserDialog1.ShowDialog(this) == System.Windows.Forms.DialogResult.OK)
                     this.folder = folderBrowserDialog1.SelectedPath;
@@ -76,10 +105,9 @@ namespace PictDisp
                 {
                     current = files.ToList().IndexOf(Lastfile);
                     ChangePicture(Direction.Actual);
-                    return;
+                    return true;
                 }
-            MessageBox.Show(this, "Closing, no picture found", VersionTitle);
-            Environment.Exit(0);
+            return false;
         }
 
         private bool RecentFiles()
@@ -96,7 +124,7 @@ namespace PictDisp
                         {
                             var entry = savedata.EntriesDict.ElementAt(recentForm.Selected);
                             this.folder = entry.Key;
-                            this.Lastfile = entry.Value; 
+                            this.Lastfile = entry.Value;
                             return true;
                         }
                     }
@@ -135,6 +163,14 @@ namespace PictDisp
         {
             //panel1.ScrollControlIntoView(pictureBox1);
 
+            // check if we're aleready in the last picture
+            if (current == (int)files.Length - 1 && direction == Direction.Next)
+            {
+                LastPictureMessage = true;
+                pictureBox1.Invalidate();
+                timer1.Start();
+                return;
+            }
             current += (int)direction;
             if (current < 0) current = 0;
             if (current >= files.Length) current = (int)files.Length - 1;
@@ -152,11 +188,12 @@ namespace PictDisp
             textBox1.Text = (current + 1).ToString();
 
             Y = 0;
+            currentY = 0;
             pictureBox1.Invalidate();
             panel2.Refresh();
         }
 
-       
+
         // Credit to http://www.vcskicks.com/image-invert.php
         private Bitmap InvertColor(Bitmap bmp)
         {
@@ -209,7 +246,7 @@ namespace PictDisp
                 else
                 {
                     comboBox1.Items.AddRange((from f in files select Path.GetFileName(f)).ToArray());
-                    return true;                   
+                    return true;
                 }
             }
             catch { }
@@ -249,6 +286,12 @@ namespace PictDisp
 
         private void MainForm_FormClosing(object sender, FormClosingEventArgs e)
         {
+            ScrollThread.Abort();
+            Save();
+        }
+
+        private void Save()
+        {
             if (folder != "")
             {
                 savedata.EntriesDict[folder] = files[current]; // save current file
@@ -271,7 +314,7 @@ namespace PictDisp
                 {
                     XmlSerializer serializer = new XmlSerializer(typeof(SaveData));
                     serializer.Serialize(ms, FinalSaveData);
-                    File.WriteAllBytes(SavePath, ms.ToArray());                
+                    File.WriteAllBytes(SavePath, ms.ToArray());
                 }
                 //using (FileStream file = File.OpenWrite(SavePath))
                 //{
@@ -332,14 +375,18 @@ namespace PictDisp
             }
         }
 
-        private void ToggleFullScreen()
+        private void ToggleFullScreen(bool SaveState = true)
         {
             //panel1.AutoScroll = false; // to avoid horizontal scroll bar (I don't know why it appears, but this fix it)
             if (this.FormBorderStyle == System.Windows.Forms.FormBorderStyle.None)
             {
                 this.FormBorderStyle = System.Windows.Forms.FormBorderStyle.Sizable;
                 this.TopMost = false;
-                checkBox2.Checked = false;
+                if (SaveState)
+                    checkBox2.Checked = false;
+                this.isFullScreen = false;
+                if (!showMagnifier)
+                    CursorShown = true;
             }
             else
             {
@@ -347,7 +394,10 @@ namespace PictDisp
                 this.TopMost = true;
                 this.WindowState = FormWindowState.Normal;
                 this.WindowState = FormWindowState.Maximized;
-                checkBox2.Checked = true;
+                if (SaveState)
+                    checkBox2.Checked = true;
+                this.isFullScreen = true;
+                CursorShown = false;
             }
             button6.Visible = checkBox2.Checked && groupBox1.Visible;
             //panel1.AutoScroll = true;
@@ -358,6 +408,11 @@ namespace PictDisp
             groupBox1.Top = 0;
             groupBox1.Visible = !groupBox1.Visible;
             button6.Visible = checkBox2.Checked && groupBox1.Visible;
+            if
+                (groupBox1.Visible) CursorShown = true;
+            else
+                if (isFullScreen || showMagnifier)
+                    CursorShown = false;
         }
 
         private void MainForm_KeyDown(object sender, KeyEventArgs e)
@@ -365,38 +420,55 @@ namespace PictDisp
             switch (e.KeyCode)
             {
                 case Keys.Down:
-                    ScrollDown(/*panel1,*/ 120);
+                    ScrollPicture(120);
                     break;
                 case Keys.Up:
-                    ScrollUp(/*panel1,*/ 120);
+                    ScrollPicture(-120);
+                    break;
+                case Keys.Home:
+                    Gain = 5;
+                    Y = 0;
+                    break;
+                case Keys.End:
+                    Gain = 5;
+                    Y = maxY;
+                    break;
+                case Keys.ControlKey:
+                    showMagnifier = !showMagnifier;
+                    if (showMagnifier)
+                        CursorShown = false;
+                    else
+                        if (groupBox1.Visible || !isFullScreen)
+                            CursorShown = true;
+                    pictureBox1.Invalidate();
                     break;
             }
         }
-        public void ScrollDown(/*Panel p,*/ int step)
-        {
-            //using (Control c = new Control() { Parent = p, Height = 1, Top = p.ClientSize.Height + p.ClientSize.Height * step / 100 })
-            //{
-            //    p.ScrollControlIntoView(c);
-            //}
-            //if (ClientSize.Height > pictureBox1.Height) return;
 
-            Y += step;
-            //Y = Math.Max(Y, ClientSize.Height - pictureBox1.Height);
-            pictureBox1.Invalidate();
-            panel2.Refresh();
-            //pictureBox1.Location = new Point(pictureBox1.Location.X, Y);
-        }
-        public void ScrollUp(/*Panel p,*/ int step)
+        public void ScrollPicture(int step)
         {
-            Y -= step;
-            if (Y < 0) Y = 0;
-            pictureBox1.Invalidate();
-            panel2.Refresh();
-            //pictureBox1.Location = new Point(0, newY);
-            //using (Control c = new Control() { Parent = p, Height = 1, Top = -p.ClientSize.Height * step / 100 })
-            //{
-            //    p.ScrollControlIntoView(c);
-            //}
+            Gain = 1.5f;
+            Y += step;
+        }
+
+        private void SmoothScroll()
+        {
+            while (true)
+            {
+                if (Y < 0) Y = 0;
+                int err = Y - currentY;
+
+                step = (int)(Gain * (int)Math.Pow(err > 0 ? err : -err, 1.0 / 3.0));
+                if (err < 0 && step > 0) step = -step;
+
+                if (step != 0)
+                {
+                    currentY += step;
+                    pictureBox1.Invalidate();
+                    panel2.Invalidate();
+                    Thread.Sleep(5);
+                }
+            }
         }
 
         private void groupBox1_LocationChanged(object sender, EventArgs e)
@@ -414,11 +486,12 @@ namespace PictDisp
         private void panel2_Paint(object sender, PaintEventArgs e)
         {
             e.Graphics.FillRectangle(DarkBrush, panel2.ClientRectangle);
-            /*ActualProgress =-(double)Y(pictureBox1.Location.Y-5) / (double)(pictureBox1.Height - ClientSize.Height+5);*/// panel1.ClientSize.Height);
+            /*ActualProgress =-(double)Y(pictureBox1.Location.Y-5) / (double)(pictureBox1.Height - ClientSize.Height+5);*/
+            // panel1.ClientSize.Height);
             int ProgressBarWidth = (int)(ActualProgress * panel2.Width);
             e.Graphics.FillRectangle(Brushes.DodgerBlue, new Rectangle(0, 0, ProgressBarWidth, 5));
         }
-        
+
         private void checkBox2_CheckedChanged(object sender, EventArgs e)
         {
             ToggleFullScreen();
@@ -451,13 +524,12 @@ namespace PictDisp
             if (e.KeyCode == Keys.Enter)
             {
                 int value = int.Parse(textBox1.Text);
-                if (value >0 && value <= files.Length)
+                if (value > 0 && value <= files.Length)
                 {
                     current = value - 1;
                     ChangePicture(Direction.Actual);
                 }
             }
-                
         }
 
         private void textBox1_KeyPress(object sender, KeyPressEventArgs e)
@@ -480,11 +552,15 @@ namespace PictDisp
         private void MainForm_Activated(object sender, EventArgs e)
         {
             pictureBox1.Enabled = true;
+            if (checkBox2.Checked && !isFullScreen)
+                ToggleFullScreen(false);
         }
 
         private void MainForm_Deactivate(object sender, EventArgs e)
         {
             pictureBox1.Enabled = false;
+            if (isFullScreen)
+                ToggleFullScreen(false);
         }
 
         private void pictureBox1_Paint(object sender, PaintEventArgs e)
@@ -493,20 +569,156 @@ namespace PictDisp
 
             Image img = (Image)pictureBox1.Tag;
 
-
+            double ratio = (double)img.Width / (double)pictureBox1.Width;
             int width = img.Width;
-            int height = (int)((double)pictureBox1.Height * ((double)img.Width / (double)pictureBox1.Width));
+            int height = (int)((double)pictureBox1.Height * ratio);
 
-            int maxY = img.Height - height;
+            maxY = img.Height - height;
             if (maxY < 0) maxY = 0;
-
             if (Y > maxY) Y = maxY;
+			
+            if (currentY < 0) currentY = 0;
+            else if (currentY > maxY) currentY = maxY;
 
-            ActualProgress =  (double)Y / (double)maxY;
+            ActualProgress = (double)currentY / (double)maxY;
 
-            Rectangle rect = new Rectangle(0, Y, width, height);
+            Rectangle rect = new Rectangle(0, currentY, width, height);
+
+            if (step == 0)
+            {
+                e.Graphics.CompositingQuality = CompositingQuality.HighQuality;
+                e.Graphics.SmoothingMode = SmoothingMode.AntiAlias;
+            }
+            else
+            {
+                e.Graphics.CompositingQuality = CompositingQuality.HighSpeed;
+                e.Graphics.SmoothingMode = SmoothingMode.HighSpeed;
+            }
+
+            e.Graphics.CompositingQuality = (step != 0) ? CompositingQuality.HighSpeed : CompositingQuality.HighQuality;
             e.Graphics.DrawImage(img, new Rectangle(0, 0, pictureBox1.Width, pictureBox1.Height), rect, GraphicsUnit.Pixel);
-            
+
+            if (showMagnifier)
+            {
+                float magnifierHeight = pictureBox1.Width / 4f;
+                float magnifierWidth = pictureBox1.Width / 3f;
+                float zoom = 2f;
+
+                RectangleF source = new RectangleF((float)((MouseLocation.X - magnifierWidth / (2 * zoom)) * ratio), (float)((MouseLocation.Y - magnifierHeight / (2 * zoom)) * ratio + currentY), (float)(magnifierWidth / zoom * ratio), (float)(magnifierHeight / zoom * ratio));
+                RectangleF dest = new RectangleF(MouseLocation.X - magnifierWidth / 2, MouseLocation.Y - magnifierHeight / 2, magnifierWidth, magnifierHeight);
+                
+                #region glow
+                // most code from http://stackoverflow.com/a/11691081/5822322
+                // hints about focusScales from : https://www.gittprogram.com/question/315860_how-to-create-halo-glow-light-effect-i-share-solution.html
+                float distance = 16f;
+                RectangleF glowrect = dest;
+                glowrect.Inflate(distance / 2, distance / 2);
+                glowrect.Offset(-1, 1);
+
+                GraphicsPath p = new GraphicsPath();
+                float diameter = 10f;
+                p.AddArc(new RectangleF(glowrect.X, glowrect.Y, diameter, diameter), 180f, 90f);
+                p.AddArc(new RectangleF(glowrect.X + glowrect.Width - diameter, glowrect.Y, diameter, diameter), 270f, 90f);
+                p.AddArc(new RectangleF(glowrect.X + glowrect.Width - diameter, glowrect.Y + glowrect.Height - diameter, diameter, diameter), 0f, 90f);
+                p.AddArc(new RectangleF(glowrect.X, glowrect.Y + glowrect.Height - diameter, diameter, diameter), 90f, 90f);
+                //p.AddRectangle(glowrect);
+                p.CloseFigure();
+
+                PathGradientBrush pthGrBrush = new PathGradientBrush(p);
+
+                pthGrBrush.CenterColor = savedata.Dark ? Color.White : Color.Black;//Color.FromArgb(255, 0, 0, 255);     
+                Color[] colors = { Color.Transparent };
+                pthGrBrush.SurroundColors = colors;
+                //float[] blendFactors = { 0.0f, 0.1f, 0.3f, 1.0f };
+                //float[] blendPos = { 0.0f, 0.4f, 0.6f, 1.0f };
+                //pthGrBrush.Blend.Factors = blendFactors;
+                //pthGrBrush.Blend.Positions = blendPos;
+                pthGrBrush.FocusScales =  new PointF((glowrect.Width - distance) / glowrect.Width, (glowrect.Height - distance) / glowrect.Height);
+
+                e.Graphics.CompositingQuality = CompositingQuality.HighQuality;
+                e.Graphics.SmoothingMode = SmoothingMode.HighSpeed;
+                e.Graphics.FillPath(pthGrBrush, p);
+                #endregion
+
+                e.Graphics.DrawImage(img, dest, source, GraphicsUnit.Pixel);
+                e.Graphics.DrawRectangle(Pens.Black, dest.X, dest.Y, dest.Width, dest.Height);
+            }
+
+            if (LastPictureMessage)
+            {
+                e.Graphics.CompositingQuality = CompositingQuality.HighQuality;
+                SizeF messageSize = e.Graphics.MeasureString(message, font);
+                PointF location = new PointF((pictureBox1.Width - messageSize.Width) / 2, pictureBox1.Height - messageSize.Height - 10);
+
+                GraphicsPath path = new GraphicsPath();
+                RectangleF arcRectangle = new RectangleF(location.X - messageSize.Height / 2, location.Y, (messageSize.Height), messageSize.Height);
+                path.AddArc(arcRectangle, 90, 180);
+                arcRectangle.X += messageSize.Width;
+                path.AddArc(arcRectangle, -90, 180);
+                path.CloseFigure();
+
+                e.Graphics.SmoothingMode = SmoothingMode.AntiAlias;
+
+                PathGradientBrush grad = new PathGradientBrush(path);
+                grad.CenterColor = Color.FromArgb(220, Color.Black);
+                grad.SurroundColors = new Color[]{Color.Transparent};
+
+                float pathWidth = arcRectangle.Width + 2f * arcRectangle.Height;
+                float distance = 10f;
+                grad.FocusScales = new PointF((pathWidth - distance) / pathWidth, (arcRectangle.Height - distance * arcRectangle.Width / arcRectangle.Height) / arcRectangle.Height);
+                e.Graphics.FillPath(grad, path);
+
+                e.Graphics.TextRenderingHint = System.Drawing.Text.TextRenderingHint.AntiAliasGridFit;
+                e.Graphics.DrawString(message, font, Brushes.Black, location);
+                location.X -= 2;
+                location.Y -= 2;
+                e.Graphics.DrawString(message, font, Brushes.White, location);
+            }
+        }
+
+        public bool LastPictureMessage { get; set; }
+
+        private void timer1_Tick(object sender, EventArgs e)
+        {
+            LastPictureMessage = false;
+            pictureBox1.Invalidate();
+            timer1.Stop();
+        }
+
+        private void pictureBox1_MouseMove(object sender, MouseEventArgs e)
+        {
+            MouseLocation = e.Location;
+            if (showMagnifier)
+            {
+                pictureBox1.Refresh();
+                pictureBox1.Update();
+            }
+        }
+
+        // http://stackoverflow.com/questions/7639502/why-do-cursor-show-and-cursor-hide-not-immediately-hide-or-show-the-cursor
+        private bool _CursorShown = true;
+        public bool CursorShown
+        {
+            get
+            {
+                return _CursorShown;
+            }
+            set
+            {
+                if (value == _CursorShown)
+                    return;
+                if (value)
+                    Cursor.Show();
+                else
+                    Cursor.Hide();
+                _CursorShown = value;
+            }
+        }
+
+        private void button7_Click(object sender, EventArgs e)
+        {
+            Save();
+            LoadPictures();
         }
     }
 }

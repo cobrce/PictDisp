@@ -28,6 +28,7 @@
         /// </summary>
         private void InitializeComponent()
         {
+            this.components = new System.ComponentModel.Container();
             this.pictureBox1 = new System.Windows.Forms.PictureBox();
             this.panel1 = new System.Windows.Forms.Panel();
             this.groupBox1 = new System.Windows.Forms.GroupBox();
@@ -42,7 +43,10 @@
             this.checkBox1 = new System.Windows.Forms.CheckBox();
             this.panel2 = new System.Windows.Forms.Panel();
             this.button6 = new System.Windows.Forms.Button();
+            this.timer1 = new System.Windows.Forms.Timer(this.components);
+            this.timer2 = new System.Windows.Forms.Timer(this.components);
             this.folderBrowserDialog1 = new Ionic.Utils.FolderBrowserDialogEx();
+            this.button7 = new System.Windows.Forms.Button();
             ((System.ComponentModel.ISupportInitialize)(this.pictureBox1)).BeginInit();
             this.groupBox1.SuspendLayout();
             this.SuspendLayout();
@@ -58,6 +62,7 @@
             this.pictureBox1.Paint += new System.Windows.Forms.PaintEventHandler(this.pictureBox1_Paint);
             this.pictureBox1.MouseClick += new System.Windows.Forms.MouseEventHandler(this.pictureBox1_MouseClick);
             this.pictureBox1.MouseEnter += new System.EventHandler(this.pictureBox1_MouseEnter);
+            this.pictureBox1.MouseMove += new System.Windows.Forms.MouseEventHandler(this.pictureBox1_MouseMove);
             // 
             // panel1
             // 
@@ -70,6 +75,7 @@
             // 
             // groupBox1
             // 
+            this.groupBox1.Controls.Add(this.button7);
             this.groupBox1.Controls.Add(this.comboBox1);
             this.groupBox1.Controls.Add(this.button5);
             this.groupBox1.Controls.Add(this.button4);
@@ -160,7 +166,7 @@
             // 
             this.button1.Location = new System.Drawing.Point(6, 21);
             this.button1.Name = "button1";
-            this.button1.Size = new System.Drawing.Size(222, 39);
+            this.button1.Size = new System.Drawing.Size(141, 39);
             this.button1.TabIndex = 1;
             this.button1.Text = "Select file";
             this.button1.UseVisualStyleBackColor = true;
@@ -197,6 +203,11 @@
             this.button6.Visible = false;
             this.button6.Click += new System.EventHandler(this.button6_Click);
             // 
+            // timer1
+            // 
+            this.timer1.Interval = 1000;
+            this.timer1.Tick += new System.EventHandler(this.timer1_Tick);
+            // 
             // folderBrowserDialog1
             // 
             this.folderBrowserDialog1.Description = "";
@@ -208,6 +219,16 @@
             this.folderBrowserDialog1.ShowEditBox = true;
             this.folderBrowserDialog1.ShowFullPathInEditBox = true;
             this.folderBrowserDialog1.ShowNewFolderButton = false;
+            // 
+            // button7
+            // 
+            this.button7.Location = new System.Drawing.Point(153, 21);
+            this.button7.Name = "button7";
+            this.button7.Size = new System.Drawing.Size(75, 39);
+            this.button7.TabIndex = 4;
+            this.button7.Text = "Reload";
+            this.button7.UseVisualStyleBackColor = true;
+            this.button7.Click += new System.EventHandler(this.button7_Click);
             // 
             // MainForm
             // 
@@ -257,6 +278,9 @@
         private System.Windows.Forms.TextBox textBox1;
         private System.Windows.Forms.ComboBox comboBox1;
         private System.Windows.Forms.Button button6;
+        private System.Windows.Forms.Timer timer1;
+        private System.Windows.Forms.Timer timer2;
+        private System.Windows.Forms.Button button7;
     }
 }
 
